@@ -1,5 +1,5 @@
 import os
-#Prova push
+import gmsh
 import numpy as np
 import sys
 import ufl
@@ -15,24 +15,27 @@ from math import sqrt
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl.operators import max_value,min_value
+from xml.dom import minidom
 
 np.set_printoptions(threshold=sys.maxsize)
 #log.set_output_file("log.txt")
 
+file_in = minidom.parse('11-09-18/d11S.xml')
+tensor_values = file.getElementsByTagName('value')
 
-epsilon = 0.085 # surface parameter
-dt = 1          # time step
-theta = 0.79     # time stepping family, e.g. theta=1 -> backward Euler, theta=0.5 -> Crank-Nicolson
-M0= 390000      #tumor inter-phase friction
-nu=0.5            #tumor cells proliferation rate
-tresh=0.15      #hypoxia threshold
-k=622.7         #young modulus
-Dn=155.52       #oxygen diffusion coefficient
-deltan=15552    #oxygen consumption rate
-Sn=10000        #oxygen supply rate
-s=5.07          #steepness coefficient of fractional tumor cell kill
-lamb=0.9        #exponent of fractional tumor cell kill
-d=2.8           #saturation level of fractional tumor cell kill
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "11-09-18/meshR.xdmf", "r") as xdmf:
+    msh=xdmf.read_mesh(name="Grid")
+
+theta=0.5
+dt=3600
+nu = Constant(msh, PETSc.ScalarType(0.3/86400))                   # tumor cells proliferation rate  (1/s)
+M0 = Constant(msh, PETSc.ScalarType(3000*86.4))                  # tumor inter-phase friction (kg/(s*mm^3))
+epsilon = Constant(msh, PETSc.ScalarType(0.9*pow(10,-3/2)))      # diffuse interphase thickness ((kg*mm/s^2)^(1/2))
+k = Constant(msh, PETSc.ScalarType(694*pow(10,-3)))           # Young modulus (kg/(mm*s^2))
+tresh = Constant(msh, PETSc.ScalarType(0.325))                    # hypoxia threshold (adim)
+Dn = Constant(msh, PETSc.ScalarType(86.4/86400))                 # oxygen diffusion coefficient (mm^2/s)
+deltan = Constant(msh, PETSc.ScalarType(8640/86400))             # oxygen consumption rate (1/s)
+Sn = Constant(msh, PETSc.ScalarType(10000/86400))
 
 R_eff=0.0      #Radiotherapy death rate
 k_C1=0.0        #Concomitant chemotherapy death rate
@@ -45,13 +48,16 @@ s1=20
 s2=25
 s3=50
 
-T = 50 * dt     #Total time
+T = 2000 * dt     #Total time
 
 comm = MPI.COMM_WORLD
 
-msh = create_unit_cube(MPI.COMM_WORLD, 50, 50, 50, CellType.tetrahedron) #Cration of the mesh
+#msh = create_unit_cube(MPI.COMM_WORLD, 50, 50, 50, CellType.tetrahedron) #Cration of the mesh
 P1 = ufl.VectorElement("Lagrange", msh.ufl_cell(), 1,3)
 ME = fem.FunctionSpace(msh,P1)                                           #Cration of the FUNCTION SPACE
+
+P_DG = ufl.VectorElement("DG", msh.ufl_cell(), 0,1)
+M_const = fem.FunctionSpace(msh,P1)
 
 Pphi, Pphi_to_P1 = ME.sub(0).collapse()
 Pmu, Pmu_to_P1 = ME.sub(1).collapse()                                        #Cration of the FUNCTION SPACE
